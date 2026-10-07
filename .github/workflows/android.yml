@@ -1,35 +1,58 @@
-name: Android APK
+name: Android APK and QEMU engine
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up JDK
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-
-      - name: Build debug APK
-        run: gradle assembleDebug --no-daemon
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - run: gradle assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
         with:
           name: HaidarVM-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+
+  build-qemu-android-arm64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: android-actions/setup-android@v3
+      - run: yes | sdkmanager "ndk;27.2.12479018"
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build meson pkg-config python3-pip libglib2.0-dev libpixman-1-dev libslirp-dev
+      - run: curl -L https://download.qemu.org/qemu-11.1.2.tar.xz -o qemu.tar.xz
+      - run: tar -xf qemu.tar.xz
+      - name: Configure QEMU
+        shell: bash
+        run: |
+          export NDK="$ANDROID_NDK_ROOT/27.2.12479018"
+          export TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
+          export CC="$TOOLCHAIN/bin/aarch64-linux-android24-clang"
+          export CXX="$TOOLCHAIN/bin/aarch64-linux-android24-clang++"
+          export AR="$TOOLCHAIN/bin/llvm-ar"
+          export RANLIB="$TOOLCHAIN/bin/llvm-ranlib"
+          export STRIP="$TOOLCHAIN/bin/llvm-strip"
+          cd qemu-11.1.2
+          ./configure --target-list=x86_64-softmmu --cpu=aarch64 --disable-werror --disable-gtk --disable-sdl --disable-opengl --disable-vulkan --disable-spice --disable-docs --disable-capstone --disable-fdt --disable-libnfs --disable-libssh --disable-curl --disable-pie
+      - name: Build QEMU
+        run: |
+          cd qemu-11.1.2
+          make -j2 qemu-system-x86_64
+          $ANDROID_NDK_ROOT/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip build/qemu-system-x86_64 || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qemu-system-x86_64-android-arm64
+          path: qemu-11.1.2/build/qemu-system-x86_64
