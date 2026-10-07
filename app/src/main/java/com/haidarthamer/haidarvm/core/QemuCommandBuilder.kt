@@ -12,7 +12,9 @@ object QemuCommandBuilder {
             add("-cpu"); add("max")
             add("-smp"); add(config.cpuCores.toString())
             add("-m"); add(config.ramMb.toString())
-            add("-device"); add("virtio-vga")
+            add("-boot"); add("menu=on")
+            add("-device"); add("VGA")
+            add("-display"); add("vnc=127.0.0.1:0")
             add("-device"); add("virtio-net-pci,netdev=n0")
             add("-netdev"); add("user,id=n0")
             config.diskPath?.let {
